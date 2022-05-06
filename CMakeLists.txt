@@ -12,3 +12,11 @@ add_dependencies(external_sort sort_lib)
 target_link_libraries(external_sort sort_lib)
 
 add_executable(input_generator input_generator.cpp)
+
+# comment if tests not needed
+
+find_package(GTest REQUIRED)
+enable_testing()
+add_executable(tests tests.cpp)
+add_dependencies(tests sort_lib)
+target_link_libraries(tests sort_lib gtest gtest_main pthread)

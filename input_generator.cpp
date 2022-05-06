@@ -23,7 +23,7 @@ int main(int argc, char** argv) {
     std::cout << number << " ";
   }
   std::cout << std::endl;
-  std::ofstream out("input.dat", std::ios::out | std::ios::binary);
+  std::ofstream out("../test_data/10elements.dat", std::ios::out | std::ios::binary);
   out.write(reinterpret_cast<char*>(&quantity), sizeof(quantity));
   out.write(reinterpret_cast<char*>(&numbers[0]), quantity * sizeof(uint32_t));
   return 0;
