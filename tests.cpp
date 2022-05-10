@@ -44,26 +44,32 @@ TEST(IOBlockCases, MoreThanBlockSizeTest) {
   assertSortedCorrectly(outputFileName);
 }
 
-TEST(MemoryCases, MemoryEqualsToReadBlockSizeSmallArr) {
+TEST(SortingCases, SmallArr) {
   std::string outputFileName = std::tmpnam(nullptr);
   sort("../test_data/10elements.dat", outputFileName, 12288);
   assertSortedCorrectly(outputFileName);
 }
 
-TEST(MemoryCases, MemoryEqualsToReadBlockSizeEqualsToArrSize) {
+TEST(SortingCases, MemoryEqualsToReadBlockSizeEqualsToArrSize) {
   std::string outputFileName = std::tmpnam(nullptr);
   sort("../test_data/128elements.dat", outputFileName, 12288);
   assertSortedCorrectly(outputFileName);
 }
 
-TEST(MemoryCases, MemoryEqualsToReadBlockSizeEqualsToHalfOfArrSize) {
+TEST(SortingCases, Sort256) {
   std::string outputFileName = std::tmpnam(nullptr);
   sort("../test_data/256elements.dat", outputFileName, 12288);
   assertSortedCorrectly(outputFileName);
 }
 
-TEST(MemoryCases, MemoryEqualsToReadBlockSizeBiggerArr) {
+TEST(SortingCases, Sort10K) {
   std::string outputFileName = std::tmpnam(nullptr);
   sort("../test_data/10000elements.dat", outputFileName, 12288);
+  assertSortedCorrectly(outputFileName);
+}
+
+TEST(SortingCases, Sort1M) {
+  std::string outputFileName = std::tmpnam(nullptr);
+  sort("../test_data/1000000elements.dat", outputFileName, 134217728);
   assertSortedCorrectly(outputFileName);
 }
