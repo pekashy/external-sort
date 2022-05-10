@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 3.19)
 project(external_sort)
 
 set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_FLAGS_DEBUG "-std=c++14 -D_NDEBUG -O3 -lpthread")
 
 add_library(sort_lib external_sort.cpp)
 

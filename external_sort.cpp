@@ -11,7 +11,7 @@
 #include <list>
 
 namespace {
-uint32_t BLOCK_SIZE = 4096;  // standart 4KB block numberOfElements for SSD
+uint32_t BLOCK_SIZE = 4096;  // standart 4KB block for SSD
 uint32_t MEMORY_SIZE = 134217728;  // memory span we have
 
 struct SortedPartitionFIleMetadata {
@@ -46,6 +46,10 @@ uint32_t getMaxNumberOfBlocksInMemory() { // as each open file keeps an open buf
   return MEMORY_SIZE / BLOCK_SIZE - 1; // as we usually need to keep a buffer to output stream open
 }
 
+uint64_t getNumberOfBlocksForTheFirstMerge(uint64_t numberOfItemsTotal) {
+  return (numberOfItemsTotal - 1) % (getMaxNumberOfBlocksInMemory() - 1);
+}
+
 uint64_t getNumberOfItemsToSort(std::ifstream& infile) {
   uint64_t size;
   infile.read(reinterpret_cast<char*>(&size), sizeof(size));
@@ -58,10 +62,6 @@ uint64_t getNumberOfItemsToSort(const std::string& infilename) {
     throw std::runtime_error("Please specify a correct file");
   }
   return getNumberOfItemsToSort(infile);
-}
-
-uint64_t getNumberOfBlocksForTheFirstMerge(uint64_t numberOfItemsTotal) {
-  return (numberOfItemsTotal - 1) % (getMaxNumberOfBlocksInMemory() - 1);
 }
 
 OpenedSortedPartitionFile::OpenedSortedPartitionFile(const std::string& filename) {
@@ -78,7 +78,7 @@ OutputFile::OutputFile(const std::string& filename) {
   if (!outStream.is_open()) {
     throw std::runtime_error("Failed to open file %s" + filename);
   }
-  fileBuffer = std::make_unique<char[]>(BLOCK_SIZE); // std::make_shared<char[]> is Cpp17+
+  fileBuffer = std::make_unique<char[]>(BLOCK_SIZE);
   outStream.rdbuf()->pubsetbuf(fileBuffer.get(), BLOCK_SIZE);
 }
 
@@ -104,9 +104,9 @@ std::vector<SortedPartitionFIleMetadata> sortAndSplit(const std::string& filenam
 
   std::vector<SortedPartitionFIleMetadata> sortedPartitionFiles;
   uint64_t numberOfItems = getNumberOfItemsToSort(infile);
-  for (uint64_t offset = 0; offset < numberOfItems; offset += getSubarraySize()) {
-    uint64_t
-        iterationSize =
+  for (uint64_t offset = 0; offset < numberOfItems;
+       offset += getSubarraySize()) {
+    uint64_t iterationSize =
         std::min(static_cast<uint64_t>(getSubarraySize()), static_cast<uint64_t>(numberOfItems - offset));
     std::string partitionFileName = std::tmpnam(nullptr);
     auto partitionFile = openFileWriteElementsQuantity(partitionFileName, iterationSize);
@@ -172,7 +172,7 @@ using smallestBlocksHeapType = std::priority_queue<SortedPartitionFIleMetadata,
 std::vector<SortedPartitionFIleMetadata> pullNSmallestPartitionsFromHeap(smallestBlocksHeapType& blockHeap,
                                                                          uint64_t N) {
   std::vector<SortedPartitionFIleMetadata> nSmallest;
-  for (int i = 0; i < N; ++i) {
+  for (int i = 0; i < N && !blockHeap.empty(); ++i) {
     nSmallest.push_back(blockHeap.top());
     blockHeap.pop();
   }

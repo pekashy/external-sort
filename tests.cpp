@@ -74,6 +74,12 @@ TEST(SortingCases, Sort1M) {
   assertSortedCorrectly(outputFileName);
 }
 
+TEST(SortingCases, Sort1M3MbMemory) {
+  std::string outputFileName = std::tmpnam(nullptr);
+  sort("../test_data/1000000elements.dat", outputFileName, 3145728);
+  assertSortedCorrectly(outputFileName);
+}
+
 TEST(EdgeCases, NotEnoughMemory) {
   std::string outputFileName = std::tmpnam(nullptr);
   EXPECT_ANY_THROW(sort("../test_data/256elements.dat", outputFileName, 4096));
