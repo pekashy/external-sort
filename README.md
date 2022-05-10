@@ -23,8 +23,8 @@ Temporaty files are generated with help of ```std::tmpnam``` which is cross-plat
 ### Algorithm
 
 Sorting is done by merge-sort algorithm modified to work in external memory to handle files larger than RAM available.
-Surely is some place for optimization, for example some parts could be paralleled, but I saw to point in parallel
-implemement
+Surely is some place for optimization, for example some parts could be paralleled, but I saw to point in parall 
+optimizations due to str because of strict initial memory restrictions.
 
 1. Define partition size as number of elements that can fit into RAM.
 2. Go over input file, load it partition by partition into memory, sort partition and write it into temporary file.

@@ -80,6 +80,19 @@ TEST(SortingCases, Sort1M3MbMemory) {
   assertSortedCorrectly(outputFileName);
 }
 
+TEST(TechCases, Sort1MVerificationTime) {
+  std::ifstream file("../test_data/1000000elements.dat", std::ios::in | std::ios::binary);
+  uint64_t filesize;
+  file.read(reinterpret_cast<char*>(&filesize), sizeof(filesize));
+  std::vector<uint32_t> vec;
+  vec.resize(filesize);
+  std::vector<uint32_t> rvector;
+  rvector.resize(filesize);
+  file.read(reinterpret_cast<char*>(&rvector[0]), filesize * sizeof(rvector[0]));
+  auto sorted = rvector;
+  std::sort(std::begin(sorted), std::end(sorted));
+}
+
 TEST(EdgeCases, NotEnoughMemory) {
   std::string outputFileName = std::tmpnam(nullptr);
   EXPECT_ANY_THROW(sort("../test_data/256elements.dat", outputFileName, 4096));
@@ -87,9 +100,9 @@ TEST(EdgeCases, NotEnoughMemory) {
 
 TEST(EdgeCases, NotExistingFile) {
   std::string outputFileName = std::tmpnam(nullptr);
-  EXPECT_ANY_THROW(sort("filenotexists", outputFileName, 4096));
+  EXPECT_ANY_THROW(sort("filenotexists", outputFileName, 134217728));
 }
 
 TEST(EdgeCases, EmptyOutputFileName) {
-  EXPECT_ANY_THROW(sort("../test_data/256elements.dat", "", 4096));
+  EXPECT_ANY_THROW(sort("../test_data/256elements.dat", "", 134217728));
 }

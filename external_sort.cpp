@@ -225,6 +225,11 @@ void external::sort(const std::string& inputFilename,
   auto outPartitionName = mergeSort(inputFilename);
   std::ifstream src(outPartitionName, std::ios::binary);
   std::ofstream dst(outputFilename, std::ios::binary);
+  if (!dst.is_open()) {
+    throw std::runtime_error(
+        "Please provide valid location for output file. Results can be found in temporary location: "
+            + outPartitionName);
+  }
   dst << src.rdbuf();
 }
 
