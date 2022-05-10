@@ -8,8 +8,6 @@
 #include <utility>
 #include <queue>
 #include <functional>
-#include <set>
-#include <memory>
 #include <list>
 
 namespace {
@@ -25,14 +23,7 @@ struct SortedPartitionFIleMetadata {
 };
 
 struct OpenedSortedPartitionFile {
-  OpenedSortedPartitionFile(const std::string& filename) {
-    filestream = std::make_shared<std::ifstream>(filename, std::ios::in | std::ios::binary);
-    if (!filestream->is_open()) {
-      throw std::runtime_error("Please specify a correct file");
-    }
-   fileBuffer = std::make_unique<char[]>(BLOCK_SIZE); // std::make_shared<char[]> is Cpp17+
-    filestream->rdbuf()->pubsetbuf(fileBuffer.get(), BLOCK_SIZE);
-  }
+  OpenedSortedPartitionFile(const std::string& filename);
   std::shared_ptr<std::ifstream> filestream; // as we need to put this object into priority_queue
   uint64_t elementsLeft;
   uint32_t frontElement;
@@ -41,14 +32,7 @@ struct OpenedSortedPartitionFile {
 };
 
 struct OutputFile {
-  OutputFile(const std::string& filename) {
-    outStream = std::ofstream(filename, std::ios::out | std::ios::binary);
-    if (!outStream.is_open()) {
-      throw std::runtime_error("Failed to open file %s" + filename);
-    }
-    fileBuffer = std::make_unique<char[]>(BLOCK_SIZE); // std::make_shared<char[]> is Cpp17+
-    outStream.rdbuf()->pubsetbuf(fileBuffer.get(), BLOCK_SIZE);
-  }
+  OutputFile(const std::string& filename);
   std::ofstream outStream;
  private:
   std::unique_ptr<char[]> fileBuffer;
@@ -78,6 +62,24 @@ uint64_t getNumberOfItemsToSort(const std::string& infilename) {
 
 uint64_t getNumberOfBlocksForTheFirstMerge(uint64_t numberOfItemsTotal) {
   return (numberOfItemsTotal - 1) % (getMaxNumberOfBlocksInMemory() - 1);
+}
+
+OpenedSortedPartitionFile::OpenedSortedPartitionFile(const std::string& filename) {
+  filestream = std::make_shared<std::ifstream>(filename, std::ios::in | std::ios::binary);
+  if (!filestream->is_open()) {
+    throw std::runtime_error("Please specify a correct file");
+  }
+  fileBuffer = std::make_unique<char[]>(BLOCK_SIZE); // std::make_shared<char[]> is Cpp17+
+  filestream->rdbuf()->pubsetbuf(fileBuffer.get(), BLOCK_SIZE);
+}
+
+OutputFile::OutputFile(const std::string& filename) {
+  outStream = std::ofstream(filename, std::ios::out | std::ios::binary);
+  if (!outStream.is_open()) {
+    throw std::runtime_error("Failed to open file %s" + filename);
+  }
+  fileBuffer = std::make_unique<char[]>(BLOCK_SIZE); // std::make_shared<char[]> is Cpp17+
+  outStream.rdbuf()->pubsetbuf(fileBuffer.get(), BLOCK_SIZE);
 }
 
 void readSortWrite(std::ifstream& input, std::ofstream& output, uint64_t number) {
@@ -167,7 +169,8 @@ using smallestBlocksHeapType = std::priority_queue<SortedPartitionFIleMetadata,
                                                    std::vector<SortedPartitionFIleMetadata>,
                                                    std::function<bool(const SortedPartitionFIleMetadata& lhs,
                                                                       const SortedPartitionFIleMetadata& rhs)>>;
-std::vector<SortedPartitionFIleMetadata> pullNSmallestPartitionsFromHeap(smallestBlocksHeapType& blockHeap, uint64_t N) {
+std::vector<SortedPartitionFIleMetadata> pullNSmallestPartitionsFromHeap(smallestBlocksHeapType& blockHeap,
+                                                                         uint64_t N) {
   std::vector<SortedPartitionFIleMetadata> nSmallest;
   for (int i = 0; i < N; ++i) {
     if (blockHeap.empty()) {

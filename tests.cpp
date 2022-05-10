@@ -20,25 +20,25 @@ void assertSortedCorrectly(const std::string& fliename) {
   ASSERT_EQ(rvector, sorted);
 }
 
-TEST(StandartCases, LessThanReadBlockSizeTest) {
+TEST(IOBlockCases, LessThanReadBlockSizeTest) {
   std::string outputFileName = std::tmpnam(nullptr);
   sort("../test_data/10elements.dat", outputFileName, 134217728);
   assertSortedCorrectly(outputFileName);
 }
 
-TEST(StandartCases, BlockSizeTest) {
+TEST(IOBlockCases, BlockSizeTest) {
   std::string outputFileName = std::tmpnam(nullptr);
   sort("../test_data/128elements.dat", outputFileName, 134217728);
   assertSortedCorrectly(outputFileName);
 }
 
-TEST(StandartCases, DoubleBlockSizeTest) {
+TEST(IOBlockCases, DoubleBlockSizeTest) {
   std::string outputFileName = std::tmpnam(nullptr);
   sort("../test_data/256elements.dat", outputFileName, 134217728);
   assertSortedCorrectly(outputFileName);
 }
 
-TEST(StandartCases, MoreThanBlockSizeTest) {
+TEST(IOBlockCases, MoreThanBlockSizeTest) {
   std::string outputFileName = std::tmpnam(nullptr);
   sort("../test_data/1000elements.dat", outputFileName, 134217728);
   assertSortedCorrectly(outputFileName);
