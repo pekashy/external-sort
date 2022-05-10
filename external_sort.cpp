@@ -4,6 +4,7 @@
 #include <fstream>
 #include <algorithm>
 #include <cstdio>
+#include <memory>
 #include <utility>
 #include <queue>
 #include <functional>
@@ -15,8 +16,8 @@ namespace {
 uint32_t BLOCK_SIZE = 4096;  // standart 4KB block numberOfElements for SSD
 uint32_t MEMORY_SIZE = 134217728;  // memory span we have
 
-struct SortedPartitionFIle {
-  SortedPartitionFIle(std::string name, uint64_t sz)
+struct SortedPartitionFIleMetadata {
+  SortedPartitionFIleMetadata(std::string name, uint64_t sz)
       : filename(std::move(name)), numberOfElements(sz) {
   }
   std::string filename;
@@ -24,16 +25,41 @@ struct SortedPartitionFIle {
 };
 
 struct OpenedSortedPartitionFile {
-  std::ifstream filestream;
-  std::uint64_t elementsLeft;
+  OpenedSortedPartitionFile(const std::string& filename) {
+    filestream = std::make_shared<std::ifstream>(filename, std::ios::in | std::ios::binary);
+    if (!filestream->is_open()) {
+      throw std::runtime_error("Please specify a correct file");
+    }
+   fileBuffer = std::make_unique<char[]>(BLOCK_SIZE); // std::make_shared<char[]> is Cpp17+
+    filestream->rdbuf()->pubsetbuf(fileBuffer.get(), BLOCK_SIZE);
+  }
+  std::shared_ptr<std::ifstream> filestream; // as we need to put this object into priority_queue
+  uint64_t elementsLeft;
+  uint32_t frontElement;
+ private:
+  std::shared_ptr<char[]> fileBuffer;
+};
+
+struct OutputFile {
+  OutputFile(const std::string& filename) {
+    outStream = std::ofstream(filename, std::ios::out | std::ios::binary);
+    if (!outStream.is_open()) {
+      throw std::runtime_error("Failed to open file %s" + filename);
+    }
+    fileBuffer = std::make_unique<char[]>(BLOCK_SIZE); // std::make_shared<char[]> is Cpp17+
+    outStream.rdbuf()->pubsetbuf(fileBuffer.get(), BLOCK_SIZE);
+  }
+  std::ofstream outStream;
+ private:
+  std::unique_ptr<char[]> fileBuffer;
 };
 
 uint32_t getSubarraySize() { // number of items we can sort inplace
   return MEMORY_SIZE / sizeof(uint32_t);
 }
 
-uint32_t getNumberOfBlocksToMerge() { // as each open file keeps an open buffer
-  return MEMORY_SIZE / BLOCK_SIZE;
+uint32_t getMaxNumberOfBlocksInMemory() { // as each open file keeps an open buffer
+  return MEMORY_SIZE / BLOCK_SIZE - 1; // as we usually need to keep a buffer to output stream open
 }
 
 uint64_t getNumberOfItemsToSort(std::ifstream& infile) {
@@ -51,7 +77,7 @@ uint64_t getNumberOfItemsToSort(const std::string& infilename) {
 }
 
 uint64_t getNumberOfBlocksForTheFirstMerge(uint64_t numberOfItemsTotal) {
-  return (numberOfItemsTotal - 1) % (getNumberOfBlocksToMerge() - 1);
+  return (numberOfItemsTotal - 1) % (getMaxNumberOfBlocksInMemory() - 1);
 }
 
 void readSortWrite(std::ifstream& input, std::ofstream& output, uint64_t number) {
@@ -62,22 +88,19 @@ void readSortWrite(std::ifstream& input, std::ofstream& output, uint64_t number)
   output.write(reinterpret_cast<char*>(&inMemory[0]), sizeof(inMemory[0]) * number);
 }
 
-std::ofstream openFileWriteElementsQuantity(const std::string& filename, uint64_t elementsQuantity) {
-  std::ofstream out(filename, std::ios::out | std::ios::binary);
-  if (!out.is_open()) {
-    throw std::runtime_error("Failed to open file: " + filename);
-  }
-  out.write(reinterpret_cast<char*>(&elementsQuantity), sizeof(elementsQuantity));
-  return out;
+OutputFile openFileWriteElementsQuantity(const std::string& filename, uint64_t elementsQuantity) {
+  OutputFile outfile(filename);
+  outfile.outStream.write(reinterpret_cast<char*>(&elementsQuantity), sizeof(elementsQuantity));
+  return outfile;
 }
 
-std::vector<SortedPartitionFIle> sortAndSplit(const std::string& filename) {
+std::vector<SortedPartitionFIleMetadata> sortAndSplit(const std::string& filename) {
   std::ifstream infile(filename, std::ios::in | std::ios::binary);
   if (!infile.is_open()) {
     throw std::runtime_error("Please specify a correct file");
   }
 
-  std::vector<SortedPartitionFIle> sortedPartitionFiles;
+  std::vector<SortedPartitionFIleMetadata> sortedPartitionFiles;
   uint64_t numberOfItems = getNumberOfItemsToSort(infile);
   for (uint64_t offset = 0; offset < numberOfItems; offset += getSubarraySize()) {
     uint64_t
@@ -85,69 +108,67 @@ std::vector<SortedPartitionFIle> sortAndSplit(const std::string& filename) {
         std::min(static_cast<uint64_t>(getSubarraySize()), static_cast<uint64_t>(numberOfItems - offset));
     std::string partitionFileName = std::tmpnam(nullptr);
     auto partitionFile = openFileWriteElementsQuantity(partitionFileName, iterationSize);
-    readSortWrite(infile, partitionFile, iterationSize);
+    readSortWrite(infile, partitionFile.outStream, iterationSize);
     sortedPartitionFiles.emplace_back(partitionFileName, iterationSize);
   }
 
   return sortedPartitionFiles;
 }
 
-OpenedSortedPartitionFile openSortedPartitonFile(const std::string& filename, size_t diskBlockSize) {
-  std::ifstream infile(filename, std::ios::in | std::ios::binary);
-  if (!infile.is_open()) {
-    throw std::runtime_error("Please specify a correct file");
+bool readNextNum(OpenedSortedPartitionFile& file) {
+  if (file.elementsLeft <= 0) {
+    return false;
   }
-  infile.rdbuf()->pubsetbuf(0, 0);
-  uint64_t numberOfItems = getNumberOfItemsToSort(infile);
-  return {std::move(infile), numberOfItems};
+  uint32_t newFront;
+  file.filestream->read(reinterpret_cast<char*>(&newFront), sizeof(uint32_t));
+  file.elementsLeft -= 1;
+  file.frontElement = newFront;
+  return true;
 }
 
-std::vector<uint32_t> readNextBatch(OpenedSortedPartitionFile& file) {
-  size_t elementsToRead =
-      std::min(static_cast<uint32_t>(file.elementsLeft), static_cast<uint32_t>(BLOCK_SIZE / sizeof(uint32_t)));
-  std::vector<uint32_t> batch;
-  batch.resize(elementsToRead);
-  file.filestream.read(reinterpret_cast<char*>(&batch[0]), elementsToRead * sizeof(uint32_t));
-  file.elementsLeft -= elementsToRead;
-  return batch;
+OpenedSortedPartitionFile openSortedPartitonFile(const std::string& filename) {
+  OpenedSortedPartitionFile openedFile(filename);
+  uint64_t numberOfItems = getNumberOfItemsToSort(*openedFile.filestream);
+  openedFile.elementsLeft = numberOfItems;
+  readNextNum(openedFile);
+  return openedFile;
 }
 
-SortedPartitionFIle mergePartitionFiles(const std::vector<SortedPartitionFIle>& filesToSort, size_t diskBlockSize) {
+SortedPartitionFIleMetadata mergePartitionFiles(const std::vector<SortedPartitionFIleMetadata>& filesToSort) {
   std::string outputPartitionFileName = std::tmpnam(nullptr);
-  std::multiset<uint32_t> mergeset;
-  std::list<OpenedSortedPartitionFile> openedFilesList;
+  auto sortOpenFilesFunction = [](const OpenedSortedPartitionFile& lhs, const OpenedSortedPartitionFile& rhs) {
+    return lhs.frontElement > rhs.frontElement;
+  };
+
+  using mergeQueueType = std::priority_queue<OpenedSortedPartitionFile,
+                                             std::vector<OpenedSortedPartitionFile>,
+                                             decltype(sortOpenFilesFunction)>;
+  mergeQueueType mergeQueue(sortOpenFilesFunction);
   uint64_t elementsToMerge = 0;
   for (auto& fileDescription: filesToSort) {
-    openedFilesList.push_back(openSortedPartitonFile(fileDescription.filename, diskBlockSize));
+    mergeQueue.push(openSortedPartitonFile(fileDescription.filename));
     elementsToMerge += fileDescription.numberOfElements;
   }
   auto outputPartitionFile = openFileWriteElementsQuantity(outputPartitionFileName, elementsToMerge);
-  while (!openedFilesList.empty()) {
-    std::vector<uint32_t> merged;
-    for (auto openedFileIt = std::begin(openedFilesList); openedFileIt != std::end(openedFilesList);) {
-      if (openedFileIt->elementsLeft == 0) {
-        openedFileIt = openedFilesList.erase(openedFileIt);
-        continue;
-      }
-      auto batch = readNextBatch(*openedFileIt);
-      std::copy(std::make_move_iterator(std::begin(batch)),
-                std::make_move_iterator(std::end(batch)),
-                std::inserter(merged, std::begin(merged)));
-      openedFileIt++;
+  while (!mergeQueue.empty()) {
+    auto fileWithSmallestElem = mergeQueue.top();
+    mergeQueue.pop();
+    outputPartitionFile.outStream.write(reinterpret_cast<char*>(&fileWithSmallestElem.frontElement),
+                                        sizeof(fileWithSmallestElem.frontElement));
+    if (readNextNum(fileWithSmallestElem)) {
+      mergeQueue.push(fileWithSmallestElem);
     }
-    std::sort(std::begin(merged), std::end(merged));
-    outputPartitionFile.write(reinterpret_cast<char*>(&merged[0]), sizeof(merged[0]) * merged.size());
   }
 
   return {outputPartitionFileName, elementsToMerge};
 }
 
-using smallestBlocksHeapType = std::priority_queue<SortedPartitionFIle,
-                                                   std::vector<SortedPartitionFIle>,
-                                                   std::function<bool(const SortedPartitionFIle& lhs,
-                                                                      const SortedPartitionFIle& rhs)>>;
-std::vector<SortedPartitionFIle> pullNSmallestPartitionsFromHeap(smallestBlocksHeapType& blockHeap, uint64_t N) {
-  std::vector<SortedPartitionFIle> nSmallest;
+using smallestBlocksHeapType = std::priority_queue<SortedPartitionFIleMetadata,
+                                                   std::vector<SortedPartitionFIleMetadata>,
+                                                   std::function<bool(const SortedPartitionFIleMetadata& lhs,
+                                                                      const SortedPartitionFIleMetadata& rhs)>>;
+std::vector<SortedPartitionFIleMetadata> pullNSmallestPartitionsFromHeap(smallestBlocksHeapType& blockHeap, uint64_t N) {
+  std::vector<SortedPartitionFIleMetadata> nSmallest;
   for (int i = 0; i < N; ++i) {
     if (blockHeap.empty()) {
       throw std::runtime_error("Heap numberOfElements miscalculation!");
@@ -162,7 +183,7 @@ std::vector<SortedPartitionFIle> pullNSmallestPartitionsFromHeap(smallestBlocksH
 
 std::string mergeSort(const std::string& inputFilename) {
   auto partitionNames = sortAndSplit(inputFilename);
-  auto getSmallestPartitionSortF = [](const SortedPartitionFIle& lhs, const SortedPartitionFIle& rhs) {
+  auto getSmallestPartitionSortF = [](const SortedPartitionFIleMetadata& lhs, const SortedPartitionFIleMetadata& rhs) {
     return lhs.numberOfElements > rhs.numberOfElements;
   };
   auto sortedPartitions = sortAndSplit(inputFilename);
@@ -181,13 +202,13 @@ std::string mergeSort(const std::string& inputFilename) {
   auto firstMergeSize = getNumberOfBlocksForTheFirstMerge(totalItemsNumber);
   if (firstMergeSize > 0) {
     auto firstMergeBatch = pullNSmallestPartitionsFromHeap(smallestBlocksHeap, firstMergeSize);
-    auto mergedPartiton = mergePartitionFiles(firstMergeBatch, BLOCK_SIZE);
+    auto mergedPartiton = mergePartitionFiles(firstMergeBatch);
     smallestBlocksHeap.push(mergedPartiton);
   }
 
   while (smallestBlocksHeap.size() > 1) {
-    auto mergeBatch = pullNSmallestPartitionsFromHeap(smallestBlocksHeap, getNumberOfBlocksToMerge());
-    auto mergedPartiton = mergePartitionFiles(mergeBatch, BLOCK_SIZE);
+    auto mergeBatch = pullNSmallestPartitionsFromHeap(smallestBlocksHeap, getMaxNumberOfBlocksInMemory());
+    auto mergedPartiton = mergePartitionFiles(mergeBatch);
     smallestBlocksHeap.push(mergedPartiton);
   }
 
@@ -195,21 +216,31 @@ std::string mergeSort(const std::string& inputFilename) {
 }
 }
 
-void sort(const std::string& inputFilename,
-          const std::string& outputFilename,
-          uint32_t diskReadBlockSize,
-          uint32_t availableMemorySize) {
-  BLOCK_SIZE = diskReadBlockSize;
+void external::sort(const std::string& inputFilename,
+                    const std::string& outputFilename,
+                    uint32_t availableMemorySize) {
   MEMORY_SIZE = availableMemorySize;
-
+  if (getMaxNumberOfBlocksInMemory() < 2) {
+    throw std::runtime_error("Please provide more memory, as we are unable to fit two blocks in memory to merge them.");
+  }
   auto outPartitionName = mergeSort(inputFilename);
   std::ifstream src(outPartitionName, std::ios::binary);
   std::ofstream dst(outputFilename, std::ios::binary);
   dst << src.rdbuf();
 }
 
-void blockedPrint(const std::string& filename) {
-  auto openedFile = openSortedPartitonFile(filename, BLOCK_SIZE);
+std::vector<uint32_t> readNextBatch(OpenedSortedPartitionFile& file) {
+  size_t elementsToRead =
+      std::min(static_cast<uint32_t>(file.elementsLeft), static_cast<uint32_t>(BLOCK_SIZE / sizeof(uint32_t)));
+  std::vector<uint32_t> batch;
+  batch.resize(elementsToRead);
+  file.filestream->read(reinterpret_cast<char*>(&batch[0]), elementsToRead * sizeof(uint32_t));
+  file.elementsLeft -= elementsToRead;
+  return batch;
+}
+
+void external::printBinartyFile(const std::string& filename) {
+  auto openedFile = openSortedPartitonFile(filename);
   while (openedFile.elementsLeft > 0) {
     auto batch = readNextBatch(openedFile);
     for (uint32_t elem: batch) {
