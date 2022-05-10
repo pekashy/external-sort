@@ -173,10 +173,6 @@ std::vector<SortedPartitionFIleMetadata> pullNSmallestPartitionsFromHeap(smalles
                                                                          uint64_t N) {
   std::vector<SortedPartitionFIleMetadata> nSmallest;
   for (int i = 0; i < N; ++i) {
-    if (blockHeap.empty()) {
-      throw std::runtime_error("Heap numberOfElements miscalculation!");
-    }
-
     nSmallest.push_back(blockHeap.top());
     blockHeap.pop();
   }
